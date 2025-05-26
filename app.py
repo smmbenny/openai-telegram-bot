@@ -14,27 +14,27 @@ HEADERS = {
     "Content-Type": "application/json"
 }
 
-# Память в оперативной памяти (в будущем можно заменить на БД)
+# Память: сопоставляем user_id Telegram → thread_id OpenAI
 user_threads = {}
 
 def send_message(chat_id, text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     requests.post(url, json={"chat_id": chat_id, "text": text})
 
-def ask_openai(prompt, chat_id):
+def ask_openai(prompt, user_id):
     try:
-        # Получаем или создаём thread_id для пользователя
-        thread_id = user_threads.get(chat_id)
+        # Используем сохранённый thread или создаём новый
+        thread_id = user_threads.get(user_id)
 
         if not thread_id:
             thread_response = requests.post("https://api.openai.com/v1/threads", headers=HEADERS)
             thread_id = thread_response.json()["id"]
-            user_threads[chat_id] = thread_id  # сохраняем thread_id в памяти
-            print(f"🧠 Новый thread_id для {chat_id}: {thread_id}")
+            user_threads[user_id] = thread_id
+            print(f"🧠 Новый thread_id для user_id {user_id}: {thread_id}")
         else:
-            print(f"📌 Используем thread_id из памяти: {thread_id}")
+            print(f"📌 Используем сохранённый thread_id: {thread_id}")
 
-        # Добавляем сообщение
+        # Отправляем сообщение в thread
         requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
             headers=HEADERS,
@@ -62,7 +62,7 @@ def ask_openai(prompt, chat_id):
                 return "Ассистент не смог обработать запрос."
             time.sleep(1)
 
-        # Получаем последнее сообщение
+        # Получаем последний ответ
         messages_response = requests.get(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
             headers=HEADERS
@@ -88,10 +88,11 @@ def webhook():
     if not text:
         return {"ok": True}
 
-    chat_id = message["chat"]["id"]
+    chat_id = message["chat"]["id"]      # нужен для ответа
+    user_id = message["from"]["id"]      # нужен для памяти
 
     try:
-        reply = ask_openai(text, chat_id)
+        reply = ask_openai(text, user_id)
         send_message(chat_id, reply)
     except Exception as e:
         print(f"❌ Ошибка обработки запроса: {e}")
@@ -101,7 +102,7 @@ def webhook():
 
 @app.route("/", methods=["GET"])
 def home():
-    return "Bot is running with memory via Assistants API", 200
+    return "Bot is running with Assistants API and memory per user_id", 200
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
