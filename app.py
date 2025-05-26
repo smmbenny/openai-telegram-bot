@@ -14,50 +14,61 @@ HEADERS = {
     "Content-Type": "application/json"
 }
 
+# Память в оперативной памяти (в будущем можно заменить на БД)
+user_threads = {}
+
 def send_message(chat_id, text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     requests.post(url, json={"chat_id": chat_id, "text": text})
 
-def ask_openai(prompt):
+def ask_openai(prompt, chat_id):
     try:
-        # 1. Создать thread
-        thread = requests.post("https://api.openai.com/v1/threads", headers=HEADERS).json()
-        thread_id = thread["id"]
+        # Получаем или создаём thread_id для пользователя
+        thread_id = user_threads.get(chat_id)
 
-        # 2. Отправить сообщение в thread
+        if not thread_id:
+            thread_response = requests.post("https://api.openai.com/v1/threads", headers=HEADERS)
+            thread_id = thread_response.json()["id"]
+            user_threads[chat_id] = thread_id  # сохраняем thread_id в памяти
+            print(f"🧠 Новый thread_id для {chat_id}: {thread_id}")
+        else:
+            print(f"📌 Используем thread_id из памяти: {thread_id}")
+
+        # Добавляем сообщение
         requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
             headers=HEADERS,
             json={"role": "user", "content": prompt}
         )
 
-        # 3. Запустить ассистента
-        run = requests.post(
+        # Запускаем ассистента
+        run_response = requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/runs",
             headers=HEADERS,
             json={"assistant_id": ASSISTANT_ID}
         ).json()
-        run_id = run["id"]
 
-        # 4. Подождать выполнения run
+        run_id = run_response["id"]
+
+        # Ждём завершения run
         while True:
-            run_status = requests.get(
+            status_response = requests.get(
                 f"https://api.openai.com/v1/threads/{thread_id}/runs/{run_id}",
                 headers=HEADERS
             ).json()
-            if run_status["status"] == "completed":
+            if status_response["status"] == "completed":
                 break
-            elif run_status["status"] == "failed":
+            elif status_response["status"] == "failed":
                 return "Ассистент не смог обработать запрос."
             time.sleep(1)
 
-        # 5. Получить ответ
-        messages = requests.get(
+        # Получаем последнее сообщение
+        messages_response = requests.get(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
             headers=HEADERS
-        ).json()["data"]
+        ).json()
+        last_message = messages_response["data"][0]["content"][0]["text"]["value"]
 
-        last_message = messages[0]["content"][0]["text"]["value"]
         return last_message
 
     except Exception as e:
@@ -67,7 +78,7 @@ def ask_openai(prompt):
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_json()
-    print("📩 Пришёл запрос от Telegram:", data)
+    print("📩 Получен запрос:", data)
 
     message = data.get("message")
     if not message:
@@ -80,17 +91,17 @@ def webhook():
     chat_id = message["chat"]["id"]
 
     try:
-        reply = ask_openai(text)
+        reply = ask_openai(text, chat_id)
         send_message(chat_id, reply)
     except Exception as e:
-        print(f"❌ Ошибка обработки: {e}")
-        send_message(chat_id, "Произошла ошибка. Попробуйте позже.")
+        print(f"❌ Ошибка обработки запроса: {e}")
+        send_message(chat_id, "Произошла ошибка. Попробуйте ещё раз.")
 
     return {"ok": True}
 
 @app.route("/", methods=["GET"])
 def home():
-    return "Bot is running via Assistants API", 200
+    return "Bot is running with memory via Assistants API", 200
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
