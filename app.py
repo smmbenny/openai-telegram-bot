@@ -36,4 +36,15 @@ def webhook():
     data = request.get_json()
     chat_id = data["message"]["chat"]["id"]
     text = data["message"]["text"]
+    reply = ask_openai(text)
+    send_message(chat_id, reply)
+    return {"ok": True}
 
+@app.route("/", methods=["GET"])
+def home():
+    return "Bot is running with GPT-4.1", 200
+
+# Обязательная часть для Render: привязка к порту
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
