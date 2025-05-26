@@ -34,7 +34,7 @@ def ask_openai(prompt, user_id):
         else:
             print(f"📌 Используем thread_id: {thread_id}")
 
-        # Добавляем сообщение
+        # Добавляем сообщение в thread
         requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
             headers=HEADERS,
@@ -73,7 +73,7 @@ def ask_openai(prompt, user_id):
 
     except Exception as e:
         print(f"❌ Ошибка Assistants API: {e}")
-        return "Произошла ошибка при обращении к ассистенту."
+        return f"❌ OpenAI API error: {e}"
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -109,7 +109,7 @@ def webhook():
         send_message(chat_id, reply)
     except Exception as e:
         print(f"❌ Ошибка обработки запроса: {e}")
-        send_message(chat_id, "Произошла ошибка. Попробуйте ещё раз.")
+        send_message(chat_id, f"Произошла ошибка. {e}")
 
     return {"ok": True}
 
