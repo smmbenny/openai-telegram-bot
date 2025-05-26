@@ -35,4 +35,5 @@ def ask_openai(prompt):
 def webhook():
     data = request.get_json()
     chat_id = data["message"]["chat"]["id"]
-    text = data["mes]()
+    text = data["message"]["text"]
+
