@@ -8,7 +8,7 @@ app = Flask(__name__)
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 ASSISTANT_ID = "asst_wwnwUQESgFERUYhFsEA9Ck0T"
-ADMIN_CHAT_ID = int(os.environ.get("ADMIN_CHAT_ID"))
+CHANNEL_ID = os.environ.get("CHANNEL_ID", "@ben_logs")  # Канал для логов
 
 HEADERS = {
     "Authorization": f"Bearer {OPENAI_API_KEY}",
@@ -20,7 +20,9 @@ user_threads = {}
 
 def send_message(chat_id, text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    requests.post(url, json={"chat_id": chat_id, "text": text})
+    response = requests.post(url, json={"chat_id": chat_id, "text": text})
+    if response.status_code != 200:
+        print(f"❌ Ошибка при отправке сообщения в {chat_id}: {response.text}")
 
 def ask_openai(prompt, user_id):
     try:
@@ -34,7 +36,7 @@ def ask_openai(prompt, user_id):
         else:
             print(f"📌 Используем thread_id: {thread_id}")
 
-        # Добавляем сообщение в thread
+        # Добавляем сообщение
         requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
             headers=HEADERS,
@@ -93,7 +95,7 @@ def webhook():
     first_name = message["from"].get("first_name", "")
     username = message["from"].get("username", "")
 
-    # Уведомление администратору при первом обращении
+    # Уведомление в канал при первом обращении
     if user_id not in user_threads:
         notify_text = (
             f"🆕 Новый пользователь\n"
@@ -102,7 +104,7 @@ def webhook():
             f"🧬 Username: @{username or 'нет'}\n"
             f"💬 Сообщение: {text}"
         )
-        send_message(ADMIN_CHAT_ID, notify_text)
+        send_message(CHANNEL_ID, notify_text)
 
     try:
         reply = ask_openai(text, user_id)
@@ -115,7 +117,7 @@ def webhook():
 
 @app.route("/", methods=["GET"])
 def home():
-    return "Bot is running with Assistants API, memory per user_id, and admin notifications.", 200
+    return "Bot is running with Assistants API, memory per user_id, and logs in @ben_logs.", 200
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
