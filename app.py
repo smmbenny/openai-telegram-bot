@@ -11,7 +11,8 @@ ASSISTANT_ID = "asst_wwnwUQESgFERUYhFsEA9Ck0T"
 
 HEADERS = {
     "Authorization": f"Bearer {OPENAI_API_KEY}",
-    "Content-Type": "application/json"
+    "Content-Type": "application/json",
+    "OpenAI-Beta": "assistants=v2"
 }
 
 def send_message(chat_id, text):
@@ -22,7 +23,7 @@ def send_message(chat_id, text):
 
 def ask_openai(prompt, user_id="debug-user"):
     try:
-        print("👉 Инициализация запроса в OpenAI")
+        print("👉 Запрос к OpenAI. Вопрос:", prompt)
 
         # Создание thread
         thread_response = requests.post("https://api.openai.com/v1/threads", headers=HEADERS)
@@ -30,11 +31,11 @@ def ask_openai(prompt, user_id="debug-user"):
         print("🧵 Thread создан:", thread_data)
 
         if "id" not in thread_data:
-            return f"Ошибка при создании thread: {thread_data}"
+            return f"❌ Ошибка при создании thread: {thread_data}"
 
         thread_id = thread_data["id"]
 
-        # Отправка сообщения в thread
+        # Отправка сообщения
         message_response = requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
             headers=HEADERS,
@@ -44,7 +45,7 @@ def ask_openai(prompt, user_id="debug-user"):
         print("✉️ Сообщение отправлено:", message_data)
 
         if message_response.status_code != 200:
-            return f"Ошибка отправки сообщения: {message_data}"
+            return f"❌ Ошибка отправки сообщения: {message_data}"
 
         # Запуск run
         run_response = requests.post(
@@ -56,7 +57,7 @@ def ask_openai(prompt, user_id="debug-user"):
         print("🏃 Запуск run:", run_data)
 
         if "id" not in run_data:
-            return f"Ошибка запуска run: {run_data}"
+            return f"❌ Ошибка запуска run: {run_data}"
 
         run_id = run_data["id"]
 
@@ -72,7 +73,7 @@ def ask_openai(prompt, user_id="debug-user"):
             if status_data["status"] == "completed":
                 break
             elif status_data["status"] == "failed":
-                return f"Run завершился с ошибкой: {status_data}"
+                return f"❌ Run завершился с ошибкой: {status_data}"
             time.sleep(1)
 
         # Получение ответа
@@ -118,7 +119,7 @@ def webhook():
 
 @app.route("/", methods=["GET"])
 def home():
-    return "Bot is running with OpenAI Assistants API and webhook logs.", 200
+    return "Bot is running with Assistants API v2 and logging enabled.", 200
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
