@@ -5,6 +5,7 @@ from flask import Flask, request
 
 app = Flask(__name__)
 
+# Конфигурация
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 ASSISTANT_ID = "asst_wwnwUQESgFERUYhFsEA9Ck0T"
@@ -16,25 +17,46 @@ HEADERS = {
     "OpenAI-Beta": "assistants=v2"
 }
 
+# Память: user_id → thread_id
+user_threads = {}
+
 def send_message(chat_id, text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     response = requests.post(url, json={"chat_id": chat_id, "text": text})
     if response.status_code != 200:
         print(f"❌ Ошибка отправки в Telegram: {response.text}")
 
+def get_or_create_thread(user_id):
+    if user_id in user_threads:
+        print(f"📌 Используем существующий thread_id для {user_id}")
+        return user_threads[user_id]
+
+    # Создание thread
+    thread_response = requests.post("https://api.openai.com/v1/threads", headers=HEADERS)
+    thread_data = thread_response.json()
+    print("🧵 Новый thread создан:", thread_data)
+
+    if "id" not in thread_data:
+        raise Exception(f"Ошибка создания thread: {thread_data}")
+
+    thread_id = thread_data["id"]
+    user_threads[user_id] = thread_id
+
+    # Привязка Vector Store к thread
+    attach_response = requests.post(
+        f"https://api.openai.com/v1/threads/{thread_id}/attachments",
+        headers=HEADERS,
+        json={"vector_store_id": VECTOR_STORE_ID}
+    )
+    attach_data = attach_response.json()
+    print("📎 Vector Store привязан к thread:", attach_data)
+
+    return thread_id
+
 def ask_openai(prompt, user_id="debug-user"):
     try:
         print("👉 Запрос от пользователя:", prompt)
-
-        # Создание thread
-        thread_response = requests.post("https://api.openai.com/v1/threads", headers=HEADERS)
-        thread_data = thread_response.json()
-        print("🧵 Thread создан:", thread_data)
-
-        if "id" not in thread_data:
-            return f"❌ Ошибка при создании thread: {thread_data}"
-
-        thread_id = thread_data["id"]
+        thread_id = get_or_create_thread(user_id)
 
         # Отправка сообщения
         message_response = requests.post(
@@ -48,29 +70,14 @@ def ask_openai(prompt, user_id="debug-user"):
         if message_response.status_code != 200:
             return f"❌ Ошибка отправки сообщения: {message_data}"
 
-        # Принудительно запускаем file_search
+        # Запуск ассистента
         run_response = requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/runs",
             headers=HEADERS,
-            json={
-                "assistant_id": ASSISTANT_ID,
-                "instructions": "Ты консультант по услугам Benefitsar. Всегда используй знания из подключённых документов для ответов.",
-                "tool_resources": {
-                    "file_search": {
-                        "vector_store_ids": [VECTOR_STORE_ID]
-                    }
-                },
-                "tool_choice": "file_search"
-            }
+            json={"assistant_id": ASSISTANT_ID}
         )
         run_data = run_response.json()
         print("🏃 Запуск run:", run_data)
-
-        # 🔍 Логируем наличие required_action
-        if "required_action" not in run_data:
-            print("⚠️ file_search НЕ активировался — required_action отсутствует")
-        else:
-            print("✅ file_search активирован:", run_data["required_action"])
 
         if "id" not in run_data:
             return f"❌ Ошибка запуска run: {run_data}"
@@ -135,7 +142,7 @@ def webhook():
 
 @app.route("/", methods=["GET"])
 def home():
-    return "Bot is running with Assistants API v2 and forced file_search.", 200
+    return "Bot is running with Assistants API v2, persistent memory, and real Vector Store binding.", 200
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
