@@ -8,6 +8,7 @@ app = Flask(__name__)
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 ASSISTANT_ID = "asst_wwnwUQESgFERUYhFsEA9Ck0T"
+VECTOR_STORE_ID = "vs_683409c567248191b68fcd34617b51c9"
 
 HEADERS = {
     "Authorization": f"Bearer {OPENAI_API_KEY}",
@@ -15,7 +16,7 @@ HEADERS = {
     "OpenAI-Beta": "assistants=v2"
 }
 
-print("✅ Заголовки для OpenAI:", HEADERS)  # проверка на этапе запуска
+print("✅ Заголовки для OpenAI:", HEADERS)
 
 def send_message(chat_id, text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -49,11 +50,18 @@ def ask_openai(prompt, user_id="debug-user"):
         if message_response.status_code != 200:
             return f"❌ Ошибка отправки сообщения: {message_data}"
 
-        # Запускаем ассистента
+        # Запускаем ассистента с Vector Store
         run_response = requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/runs",
             headers=HEADERS,
-            json={"assistant_id": ASSISTANT_ID}
+            json={
+                "assistant_id": ASSISTANT_ID,
+                "tool_resources": {
+                    "file_search": {
+                        "vector_store_ids": [VECTOR_STORE_ID]
+                    }
+                }
+            }
         )
         run_data = run_response.json()
         print("🏃 Запуск run:", run_data)
@@ -63,7 +71,7 @@ def ask_openai(prompt, user_id="debug-user"):
 
         run_id = run_data["id"]
 
-        # Ждём завершения
+        # Ожидание завершения
         while True:
             status_response = requests.get(
                 f"https://api.openai.com/v1/threads/{thread_id}/runs/{run_id}",
@@ -121,7 +129,7 @@ def webhook():
 
 @app.route("/", methods=["GET"])
 def home():
-    return "Bot is running with Assistants API v2 and logs.", 200
+    return "Bot is running with Assistants API v2 and connected Vector Store.", 200
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
