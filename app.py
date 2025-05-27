@@ -5,11 +5,13 @@ from flask import Flask, request
 
 app = Flask(__name__)
 
+# Конфигурация
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 ASSISTANT_ID = "asst_wwnwUQESgFERUYhFsEA9Ck0T"
 VECTOR_STORE_ID = "vs_683409c567248191b68fcd34617b51c9"
 
+# Заголовки
 HEADERS = {
     "Authorization": f"Bearer {OPENAI_API_KEY}",
     "Content-Type": "application/json",
@@ -18,17 +20,19 @@ HEADERS = {
 
 print("✅ Заголовки для OpenAI:", HEADERS)
 
+# Отправка сообщений в Telegram
 def send_message(chat_id, text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     response = requests.post(url, json={"chat_id": chat_id, "text": text})
     if response.status_code != 200:
         print(f"❌ Ошибка отправки в Telegram: {response.text}")
 
+# Основная логика общения с OpenAI
 def ask_openai(prompt, user_id="debug-user"):
     try:
-        print("👉 Новый запрос в OpenAI:", prompt)
+        print("👉 Запрос от пользователя:", prompt)
 
-        # Создаём thread
+        # Создание thread
         thread_response = requests.post("https://api.openai.com/v1/threads", headers=HEADERS)
         thread_data = thread_response.json()
         print("🧵 Thread создан:", thread_data)
@@ -38,7 +42,7 @@ def ask_openai(prompt, user_id="debug-user"):
 
         thread_id = thread_data["id"]
 
-        # Отправляем сообщение
+        # Отправка сообщения пользователя
         message_response = requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
             headers=HEADERS,
@@ -50,12 +54,13 @@ def ask_openai(prompt, user_id="debug-user"):
         if message_response.status_code != 200:
             return f"❌ Ошибка отправки сообщения: {message_data}"
 
-        # Запускаем ассистента с Vector Store
+        # Запуск ассистента с подключением Vector Store
         run_response = requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/runs",
             headers=HEADERS,
             json={
                 "assistant_id": ASSISTANT_ID,
+                "instructions": "Ты консультант по услугам Benefitsar. Всегда используй знания из подключённых документов для ответов.",
                 "tool_resources": {
                     "file_search": {
                         "vector_store_ids": [VECTOR_STORE_ID]
@@ -86,7 +91,7 @@ def ask_openai(prompt, user_id="debug-user"):
                 return f"❌ Run завершился с ошибкой: {status_data}"
             time.sleep(1)
 
-        # Получаем ответ
+        # Получение ответа
         messages_response = requests.get(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
             headers=HEADERS
@@ -98,12 +103,13 @@ def ask_openai(prompt, user_id="debug-user"):
         return last_message
 
     except Exception as e:
-        print(f"❌ Ошибка Assistants API: {e}")
+        print(f"❌ Ошибка в ask_openai: {e}")
         return f"❌ OpenAI API error: {e}"
 
+# Вебхук от Telegram
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    print("📥 Входящий /webhook")
+    print("📥 Входящий запрос /webhook")
     data = request.get_json()
     print("📩 JSON от Telegram:", data)
 
@@ -122,14 +128,14 @@ def webhook():
         reply = ask_openai(text, user_id)
         send_message(chat_id, reply)
     except Exception as e:
-        print(f"❌ Ошибка обработки запроса: {e}")
+        print(f"❌ Ошибка webhook:", e)
         send_message(chat_id, f"Произошла ошибка. {e}")
 
     return {"ok": True}
 
 @app.route("/", methods=["GET"])
 def home():
-    return "Bot is running with Assistants API v2 and connected Vector Store.", 200
+    return "Bot is running with Assistants API v2 and Vector Store enabled.", 200
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
