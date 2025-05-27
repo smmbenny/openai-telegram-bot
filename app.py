@@ -24,7 +24,7 @@ def ask_openai(prompt, user_id="debug-user"):
     try:
         print("👉 Инициализация запроса в OpenAI")
 
-        # Создание нового thread
+        # Создание thread
         thread_response = requests.post("https://api.openai.com/v1/threads", headers=HEADERS)
         thread_data = thread_response.json()
         print("🧵 Thread создан:", thread_data)
@@ -34,7 +34,7 @@ def ask_openai(prompt, user_id="debug-user"):
 
         thread_id = thread_data["id"]
 
-        # Отправка сообщения
+        # Отправка сообщения в thread
         message_response = requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
             headers=HEADERS,
@@ -46,7 +46,7 @@ def ask_openai(prompt, user_id="debug-user"):
         if message_response.status_code != 200:
             return f"Ошибка отправки сообщения: {message_data}"
 
-        # Запуск ассистента
+        # Запуск run
         run_response = requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/runs",
             headers=HEADERS,
@@ -60,7 +60,7 @@ def ask_openai(prompt, user_id="debug-user"):
 
         run_id = run_data["id"]
 
-        # Ожидание завершения run
+        # Ожидание завершения
         while True:
             status_response = requests.get(
                 f"https://api.openai.com/v1/threads/{thread_id}/runs/{run_id}",
@@ -92,8 +92,9 @@ def ask_openai(prompt, user_id="debug-user"):
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
+    print("📥 Входящий вызов /webhook")
     data = request.get_json()
-    print("📩 Получен запрос от Telegram:", data)
+    print("📩 JSON от Telegram:", data)
 
     message = data.get("message")
     if not message:
@@ -117,7 +118,7 @@ def webhook():
 
 @app.route("/", methods=["GET"])
 def home():
-    return "Bot is running with debug Assistants API.", 200
+    return "Bot is running with OpenAI Assistants API and webhook logs.", 200
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
