@@ -66,12 +66,18 @@ def ask_openai(prompt, user_id="debug-user"):
         run_data = run_response.json()
         print("🏃 Запуск run:", run_data)
 
+        # 🔍 Логируем наличие required_action
+        if "required_action" not in run_data:
+            print("⚠️ file_search НЕ активировался — required_action отсутствует")
+        else:
+            print("✅ file_search активирован:", run_data["required_action"])
+
         if "id" not in run_data:
             return f"❌ Ошибка запуска run: {run_data}"
 
         run_id = run_data["id"]
 
-        # Ожидаем завершения run
+        # Ожидание завершения run
         while True:
             status_response = requests.get(
                 f"https://api.openai.com/v1/threads/{thread_id}/runs/{run_id}",
@@ -86,7 +92,7 @@ def ask_openai(prompt, user_id="debug-user"):
                 return f"❌ Run завершился с ошибкой: {status_data}"
             time.sleep(1)
 
-        # Получаем результат
+        # Получение ответа
         messages_response = requests.get(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
             headers=HEADERS
