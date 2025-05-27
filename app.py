@@ -30,7 +30,7 @@ def get_or_create_thread(user_id):
         print(f"📌 Используем thread_id для user_id {user_id}")
         return user_threads[user_id]
 
-    # Создание нового thread
+    # Создание thread
     thread_response = requests.post("https://api.openai.com/v1/threads", headers=HEADERS)
     thread_data = thread_response.json()
     print("🧵 Thread создан:", thread_data)
@@ -57,7 +57,7 @@ def ask_openai(prompt, user_id="debug-user"):
         print(f"👉 Запрос от пользователя {user_id}: {prompt}")
         thread_id = get_or_create_thread(user_id)
 
-        # Отправка сообщения в thread
+        # Отправка сообщения
         message_response = requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
             headers=HEADERS,
@@ -69,11 +69,19 @@ def ask_openai(prompt, user_id="debug-user"):
         if message_response.status_code != 200:
             return f"❌ Ошибка отправки сообщения: {message_data}"
 
-        # Запуск ассистента (без tool_choice)
+        # Запуск run с инструкцией
         run_response = requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/runs",
             headers=HEADERS,
-            json={"assistant_id": ASSISTANT_ID}
+            json={
+                "assistant_id": ASSISTANT_ID,
+                "instructions": (
+                    "Ты ассистент сервиса Benefitsar. "
+                    "Всегда используй знания из прикреплённых документов Vector Store. "
+                    "Отвечай строго по фактам из базы. "
+                    "Если в документах нет информации — честно говори, что данных нет."
+                )
+            }
         )
         run_data = run_response.json()
         print("🏃 Запуск run:", run_data)
@@ -141,7 +149,7 @@ def webhook():
 
 @app.route("/", methods=["GET"])
 def home():
-    return "Bot is running with Assistants API v2, memory, and Vector Store attachment.", 200
+    return "Bot is running with Assistants API v2, memory, vector store and instruction.", 200
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
