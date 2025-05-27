@@ -15,17 +15,19 @@ HEADERS = {
     "OpenAI-Beta": "assistants=v2"
 }
 
+print("✅ Заголовки для OpenAI:", HEADERS)  # проверка на этапе запуска
+
 def send_message(chat_id, text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     response = requests.post(url, json={"chat_id": chat_id, "text": text})
     if response.status_code != 200:
-        print(f"❌ Ошибка отправки сообщения в Telegram: {response.text}")
+        print(f"❌ Ошибка отправки в Telegram: {response.text}")
 
 def ask_openai(prompt, user_id="debug-user"):
     try:
-        print("👉 Запрос к OpenAI. Вопрос:", prompt)
+        print("👉 Новый запрос в OpenAI:", prompt)
 
-        # Создание thread
+        # Создаём thread
         thread_response = requests.post("https://api.openai.com/v1/threads", headers=HEADERS)
         thread_data = thread_response.json()
         print("🧵 Thread создан:", thread_data)
@@ -35,7 +37,7 @@ def ask_openai(prompt, user_id="debug-user"):
 
         thread_id = thread_data["id"]
 
-        # Отправка сообщения
+        # Отправляем сообщение
         message_response = requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
             headers=HEADERS,
@@ -47,7 +49,7 @@ def ask_openai(prompt, user_id="debug-user"):
         if message_response.status_code != 200:
             return f"❌ Ошибка отправки сообщения: {message_data}"
 
-        # Запуск run
+        # Запускаем ассистента
         run_response = requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/runs",
             headers=HEADERS,
@@ -61,7 +63,7 @@ def ask_openai(prompt, user_id="debug-user"):
 
         run_id = run_data["id"]
 
-        # Ожидание завершения
+        # Ждём завершения
         while True:
             status_response = requests.get(
                 f"https://api.openai.com/v1/threads/{thread_id}/runs/{run_id}",
@@ -76,7 +78,7 @@ def ask_openai(prompt, user_id="debug-user"):
                 return f"❌ Run завершился с ошибкой: {status_data}"
             time.sleep(1)
 
-        # Получение ответа
+        # Получаем ответ
         messages_response = requests.get(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
             headers=HEADERS
@@ -93,7 +95,7 @@ def ask_openai(prompt, user_id="debug-user"):
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    print("📥 Входящий вызов /webhook")
+    print("📥 Входящий /webhook")
     data = request.get_json()
     print("📩 JSON от Telegram:", data)
 
@@ -119,7 +121,7 @@ def webhook():
 
 @app.route("/", methods=["GET"])
 def home():
-    return "Bot is running with Assistants API v2 and logging enabled.", 200
+    return "Bot is running with Assistants API v2 and logs.", 200
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
