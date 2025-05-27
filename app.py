@@ -8,24 +8,22 @@ app = Flask(__name__)
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 ASSISTANT_ID = "asst_wwnwUQESgFERUYhFsEA9Ck0T"
-CHANNEL_ID = os.environ.get("CHANNEL_ID", "@ben_logs")  # Канал для логов
 
 HEADERS = {
     "Authorization": f"Bearer {OPENAI_API_KEY}",
     "Content-Type": "application/json"
 }
 
-# Память: user_id → thread_id
+# Память: сопоставляем user_id Telegram → thread_id OpenAI
 user_threads = {}
 
 def send_message(chat_id, text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    response = requests.post(url, json={"chat_id": chat_id, "text": text})
-    if response.status_code != 200:
-        print(f"❌ Ошибка при отправке сообщения в {chat_id}: {response.text}")
+    requests.post(url, json={"chat_id": chat_id, "text": text})
 
 def ask_openai(prompt, user_id):
     try:
+        # Используем сохранённый thread или создаём новый
         thread_id = user_threads.get(user_id)
 
         if not thread_id:
@@ -34,9 +32,9 @@ def ask_openai(prompt, user_id):
             user_threads[user_id] = thread_id
             print(f"🧠 Новый thread_id для user_id {user_id}: {thread_id}")
         else:
-            print(f"📌 Используем thread_id: {thread_id}")
+            print(f"📌 Используем сохранённый thread_id: {thread_id}")
 
-        # Добавляем сообщение
+        # Отправляем сообщение в thread
         requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
             headers=HEADERS,
@@ -64,7 +62,7 @@ def ask_openai(prompt, user_id):
                 return "Ассистент не смог обработать запрос."
             time.sleep(1)
 
-        # Получаем ответ
+        # Получаем последний ответ
         messages_response = requests.get(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
             headers=HEADERS
@@ -75,7 +73,7 @@ def ask_openai(prompt, user_id):
 
     except Exception as e:
         print(f"❌ Ошибка Assistants API: {e}")
-        return f"❌ OpenAI API error: {e}"
+        return "Произошла ошибка при обращении к ассистенту."
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -90,34 +88,21 @@ def webhook():
     if not text:
         return {"ok": True}
 
-    chat_id = message["chat"]["id"]
-    user_id = message["from"]["id"]
-    first_name = message["from"].get("first_name", "")
-    username = message["from"].get("username", "")
-
-    # Уведомление в канал при первом обращении
-    if user_id not in user_threads:
-        notify_text = (
-            f"🆕 Новый пользователь\n"
-            f"👤 ID: {user_id}\n"
-            f"📛 Имя: {first_name}\n"
-            f"🧬 Username: @{username or 'нет'}\n"
-            f"💬 Сообщение: {text}"
-        )
-        send_message(CHANNEL_ID, notify_text)
+    chat_id = message["chat"]["id"]      # нужен для ответа
+    user_id = message["from"]["id"]      # нужен для памяти
 
     try:
         reply = ask_openai(text, user_id)
         send_message(chat_id, reply)
     except Exception as e:
         print(f"❌ Ошибка обработки запроса: {e}")
-        send_message(chat_id, f"Произошла ошибка. {e}")
+        send_message(chat_id, "Произошла ошибка. Попробуйте ещё раз.")
 
     return {"ok": True}
 
 @app.route("/", methods=["GET"])
 def home():
-    return "Bot is running with Assistants API, memory per user_id, and logs in @ben_logs.", 200
+    return "Bot is running with Assistants API and memory per user_id", 200
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
