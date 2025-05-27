@@ -5,7 +5,6 @@ from flask import Flask, request
 
 app = Flask(__name__)
 
-# Конфигурация
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 ASSISTANT_ID = "asst_wwnwUQESgFERUYhFsEA9Ck0T"
@@ -28,16 +27,16 @@ def send_message(chat_id, text):
 
 def get_or_create_thread(user_id):
     if user_id in user_threads:
-        print(f"📌 Используем существующий thread_id для {user_id}")
+        print(f"📌 Используем thread_id для user_id {user_id}")
         return user_threads[user_id]
 
-    # Создание thread
+    # Создание нового thread
     thread_response = requests.post("https://api.openai.com/v1/threads", headers=HEADERS)
     thread_data = thread_response.json()
-    print("🧵 Новый thread создан:", thread_data)
+    print("🧵 Thread создан:", thread_data)
 
     if "id" not in thread_data:
-        raise Exception(f"Ошибка создания thread: {thread_data}")
+        raise Exception(f"❌ Ошибка создания thread: {thread_data}")
 
     thread_id = thread_data["id"]
     user_threads[user_id] = thread_id
@@ -49,16 +48,16 @@ def get_or_create_thread(user_id):
         json={"vector_store_id": VECTOR_STORE_ID}
     )
     attach_data = attach_response.json()
-    print("📎 Vector Store привязан к thread:", attach_data)
+    print("📎 Vector Store привязан:", attach_data)
 
     return thread_id
 
 def ask_openai(prompt, user_id="debug-user"):
     try:
-        print("👉 Запрос от пользователя:", prompt)
+        print(f"👉 Запрос от пользователя {user_id}: {prompt}")
         thread_id = get_or_create_thread(user_id)
 
-        # Отправка сообщения
+        # Отправка сообщения в thread
         message_response = requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
             headers=HEADERS,
@@ -70,7 +69,7 @@ def ask_openai(prompt, user_id="debug-user"):
         if message_response.status_code != 200:
             return f"❌ Ошибка отправки сообщения: {message_data}"
 
-        # Запуск ассистента
+        # Запуск ассистента (без tool_choice)
         run_response = requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/runs",
             headers=HEADERS,
@@ -84,7 +83,7 @@ def ask_openai(prompt, user_id="debug-user"):
 
         run_id = run_data["id"]
 
-        # Ожидание завершения run
+        # Ожидание завершения
         while True:
             status_response = requests.get(
                 f"https://api.openai.com/v1/threads/{thread_id}/runs/{run_id}",
@@ -142,7 +141,7 @@ def webhook():
 
 @app.route("/", methods=["GET"])
 def home():
-    return "Bot is running with Assistants API v2, persistent memory, and real Vector Store binding.", 200
+    return "Bot is running with Assistants API v2, memory, and Vector Store attachment.", 200
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
