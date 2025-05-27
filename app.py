@@ -8,7 +8,6 @@ app = Flask(__name__)
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 ASSISTANT_ID = "asst_wwnwUQESgFERUYhFsEA9Ck0T"
-VECTOR_STORE_ID = "vs_683409c567248191b68fcd34617b51c9"
 
 HEADERS = {
     "Authorization": f"Bearer {OPENAI_API_KEY}",
@@ -16,7 +15,7 @@ HEADERS = {
     "OpenAI-Beta": "assistants=v2"
 }
 
-# Память: user_id → thread_id
+# Сохраняем thread_id на пользователя
 user_threads = {}
 
 def send_message(chat_id, text):
@@ -30,26 +29,15 @@ def get_or_create_thread(user_id):
         print(f"📌 Используем thread_id для user_id {user_id}")
         return user_threads[user_id]
 
-    # Создание thread
-    thread_response = requests.post("https://api.openai.com/v1/threads", headers=HEADERS)
-    thread_data = thread_response.json()
-    print("🧵 Thread создан:", thread_data)
+    response = requests.post("https://api.openai.com/v1/threads", headers=HEADERS)
+    data = response.json()
+    print("🧵 Thread создан:", data)
 
-    if "id" not in thread_data:
-        raise Exception(f"❌ Ошибка создания thread: {thread_data}")
+    if "id" not in data:
+        raise Exception(f"❌ Ошибка создания thread: {data}")
 
-    thread_id = thread_data["id"]
+    thread_id = data["id"]
     user_threads[user_id] = thread_id
-
-    # Привязка Vector Store к thread
-    attach_response = requests.post(
-        f"https://api.openai.com/v1/threads/{thread_id}/attachments",
-        headers=HEADERS,
-        json={"vector_store_id": VECTOR_STORE_ID}
-    )
-    attach_data = attach_response.json()
-    print("📎 Vector Store привязан:", attach_data)
-
     return thread_id
 
 def ask_openai(prompt, user_id="debug-user"):
@@ -58,74 +46,62 @@ def ask_openai(prompt, user_id="debug-user"):
         thread_id = get_or_create_thread(user_id)
 
         # Отправка сообщения
-        message_response = requests.post(
+        msg = requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
             headers=HEADERS,
             json={"role": "user", "content": prompt}
-        )
-        message_data = message_response.json()
-        print("✉️ Сообщение отправлено:", message_data)
+        ).json()
+        print("✉️ Сообщение:", msg)
 
-        if message_response.status_code != 200:
-            return f"❌ Ошибка отправки сообщения: {message_data}"
-
-        # Запуск run с инструкцией
-        run_response = requests.post(
+        # Запуск run
+        run = requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/runs",
             headers=HEADERS,
             json={
                 "assistant_id": ASSISTANT_ID,
                 "instructions": (
-                    "Ты ассистент сервиса Benefitsar. "
-                    "Всегда используй знания из прикреплённых документов Vector Store. "
-                    "Отвечай строго по фактам из базы. "
-                    "Если в документах нет информации — честно говори, что данных нет."
+                    "Ты ассистент сервиса Benefitsar. Используй только знания из подключённых файлов. "
+                    "Если информации нет — прямо скажи об этом."
                 )
             }
-        )
-        run_data = run_response.json()
-        print("🏃 Запуск run:", run_data)
+        ).json()
+        print("🏃 Запуск run:", run)
 
-        if "id" not in run_data:
-            return f"❌ Ошибка запуска run: {run_data}"
+        if "id" not in run:
+            return f"❌ Ошибка запуска run: {run}"
 
-        run_id = run_data["id"]
+        run_id = run["id"]
 
-        # Ожидание завершения
+        # Ожидание завершения run
         while True:
-            status_response = requests.get(
+            status = requests.get(
                 f"https://api.openai.com/v1/threads/{thread_id}/runs/{run_id}",
                 headers=HEADERS
-            )
-            status_data = status_response.json()
-            print("⏳ Статус run:", status_data)
-
-            if status_data["status"] == "completed":
+            ).json()
+            print("⏳ Статус:", status)
+            if status["status"] == "completed":
                 break
-            elif status_data["status"] == "failed":
-                return f"❌ Run завершился с ошибкой: {status_data}"
+            elif status["status"] == "failed":
+                return f"❌ Ошибка run: {status}"
             time.sleep(1)
 
         # Получение ответа
-        messages_response = requests.get(
+        response = requests.get(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
             headers=HEADERS
-        )
-        messages_data = messages_response.json()
-        print("📬 Ответ OpenAI:", messages_data)
+        ).json()
+        print("📬 Ответ OpenAI:", response)
 
-        last_message = messages_data["data"][0]["content"][0]["text"]["value"]
-        return last_message
+        return response["data"][0]["content"][0]["text"]["value"]
 
     except Exception as e:
         print(f"❌ Ошибка в ask_openai: {e}")
-        return f"❌ OpenAI API error: {e}"
+        return f"Произошла ошибка: {e}"
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    print("📥 Входящий запрос от Telegram")
     data = request.get_json()
-    print("📩 JSON:", data)
+    print("📩 Входящий запрос:", data)
 
     message = data.get("message")
     if not message:
@@ -142,15 +118,5 @@ def webhook():
         reply = ask_openai(text, user_id)
         send_message(chat_id, reply)
     except Exception as e:
-        print(f"❌ Ошибка в webhook:", e)
         send_message(chat_id, f"Произошла ошибка. {e}")
-
-    return {"ok": True}
-
-@app.route("/", methods=["GET"])
-def home():
-    return "Bot is running with Assistants API v2, memory, vector store and instruction.", 200
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+        print(f"❌ Ошибка в webhook:
