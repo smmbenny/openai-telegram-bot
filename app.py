@@ -16,58 +16,84 @@ HEADERS = {
 
 def send_message(chat_id, text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    requests.post(url, json={"chat_id": chat_id, "text": text})
+    response = requests.post(url, json={"chat_id": chat_id, "text": text})
+    if response.status_code != 200:
+        print(f"❌ Ошибка отправки сообщения в Telegram: {response.text}")
 
-def ask_openai(prompt):
+def ask_openai(prompt, user_id="debug-user"):
     try:
-        # 1. Создать thread
-        thread = requests.post("https://api.openai.com/v1/threads", headers=HEADERS).json()
-        thread_id = thread["id"]
+        print("👉 Инициализация запроса в OpenAI")
 
-        # 2. Отправить сообщение в thread
-        requests.post(
+        # Создание нового thread
+        thread_response = requests.post("https://api.openai.com/v1/threads", headers=HEADERS)
+        thread_data = thread_response.json()
+        print("🧵 Thread создан:", thread_data)
+
+        if "id" not in thread_data:
+            return f"Ошибка при создании thread: {thread_data}"
+
+        thread_id = thread_data["id"]
+
+        # Отправка сообщения
+        message_response = requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
             headers=HEADERS,
             json={"role": "user", "content": prompt}
         )
+        message_data = message_response.json()
+        print("✉️ Сообщение отправлено:", message_data)
 
-        # 3. Запустить ассистента
-        run = requests.post(
+        if message_response.status_code != 200:
+            return f"Ошибка отправки сообщения: {message_data}"
+
+        # Запуск ассистента
+        run_response = requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/runs",
             headers=HEADERS,
             json={"assistant_id": ASSISTANT_ID}
-        ).json()
-        run_id = run["id"]
+        )
+        run_data = run_response.json()
+        print("🏃 Запуск run:", run_data)
 
-        # 4. Подождать выполнения run
+        if "id" not in run_data:
+            return f"Ошибка запуска run: {run_data}"
+
+        run_id = run_data["id"]
+
+        # Ожидание завершения run
         while True:
-            run_status = requests.get(
+            status_response = requests.get(
                 f"https://api.openai.com/v1/threads/{thread_id}/runs/{run_id}",
                 headers=HEADERS
-            ).json()
-            if run_status["status"] == "completed":
+            )
+            status_data = status_response.json()
+            print("⏳ Статус run:", status_data)
+
+            if status_data["status"] == "completed":
                 break
-            elif run_status["status"] == "failed":
-                return "Ассистент не смог обработать запрос."
+            elif status_data["status"] == "failed":
+                return f"Run завершился с ошибкой: {status_data}"
             time.sleep(1)
 
-        # 5. Получить ответ
-        messages = requests.get(
+        # Получение ответа
+        messages_response = requests.get(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
             headers=HEADERS
-        ).json()["data"]
+        )
+        messages_data = messages_response.json()
+        print("📬 Ответ OpenAI:", messages_data)
 
-        last_message = messages[0]["content"][0]["text"]["value"]
+        last_message = messages_data["data"][0]["content"][0]["text"]["value"]
         return last_message
 
     except Exception as e:
         print(f"❌ Ошибка Assistants API: {e}")
-        return "Произошла ошибка при обращении к ассистенту."
+        return f"❌ OpenAI API error: {e}"
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_json()
-    print("📩 Пришёл запрос от Telegram:", data)
+    print("📩 Получен запрос от Telegram:", data)
 
     message = data.get("message")
     if not message:
@@ -78,19 +104,20 @@ def webhook():
         return {"ok": True}
 
     chat_id = message["chat"]["id"]
+    user_id = message["from"]["id"]
 
     try:
-        reply = ask_openai(text)
+        reply = ask_openai(text, user_id)
         send_message(chat_id, reply)
     except Exception as e:
-        print(f"❌ Ошибка обработки: {e}")
-        send_message(chat_id, "Произошла ошибка. Попробуйте позже.")
+        print(f"❌ Ошибка обработки запроса: {e}")
+        send_message(chat_id, f"Произошла ошибка. {e}")
 
     return {"ok": True}
 
 @app.route("/", methods=["GET"])
 def home():
-    return "Bot is running via Assistants API", 200
+    return "Bot is running with debug Assistants API.", 200
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
